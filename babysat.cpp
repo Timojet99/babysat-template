@@ -26,6 +26,7 @@ const char *usage =
 #include <cstdlib>
 #include <cstring>
 #include <vector>
+#include <set>
 
 #include <iostream>
 
@@ -61,6 +62,12 @@ struct Clause {
 #define FALSE_ASSIGNMENT -1
 #define TRUE_ASSIGNMENT 1
 #define UNASSIGNED 0
+
+// This works for all cases except for prime65537.cnf
+// On Average it is about 50% slower than the original
+// Without the heuristic prime65537.cnf takes about 16x the time compared
+// with kissat, prime4294967297.cnf is about the same speed as kissat
+// #define HeuristicsTest
 
 static int variables;       // Variable range: 1,..,<variables>
 static signed char *values; // Assignment 0=unassigned,-1=false,1=true.
@@ -432,6 +439,8 @@ static void parse(void) {
 // conflict propagating a literal also detects unit clauses and
 // then assign the forced literal by that unit clause.
 
+#ifdef HeuristicsTest
+
 static bool propagate(void) {
   while (propagated != trail.size()) {
     // std::cout << "0" << std::endl;
@@ -490,17 +499,116 @@ static bool propagate(void) {
   return true;
 }
 
+#else
+
+static bool propagate(void) {
+  while (propagated != trail.size()) {
+    // std::cout << "0" << std::endl;
+    // std::cout << "PROPAGATE" << std::endl;
+    // std::cout << "PROPAGATED: " << propagated << std::endl;
+    // std::cout << "TRAILSIZE: " << trail.size() << std::endl;
+    int lit = trail[propagated];
+    propagated++;
+    propagations++;
+    // std::cout << "LIT: " << lit << std::endl;
+    // std::cout << "0" << std::endl;
+    for (auto c : matrix[-lit]) {
+      if (c == empty_clause)
+        return false;
+      if (satisfied(c))
+        continue;
+      int unassigned = 0;
+      int unass_lit = 0;
+      // bool falsified = false;
+      // int ass_true = 0;
+      for (auto lit_c : *c) {
+        if (lit_c == -lit)
+          continue;
+        if (values[lit_c] < 0) {
+          continue;
+        }
+        /*if (values[lit_c] > 0) {
+          ass_true++;
+          continue;
+        }*/
+        if (values[lit_c] == 0) {
+          unassigned++;
+          // std::cout << "debug ----- unass_lit: " << lit_c << std::endl;
+          unass_lit = lit_c;
+          continue;
+        }
+      }
+      if (unassigned == 0) { // ass_true == 0) {
+        conflicts++;
+        // std::cout << "FALSIFIED CLAUSE DETECTED" << std::endl;
+        return false; // falsified clause
+      }
+      if (unassigned == 1) { //&& ass_true == 0) {
+        assign(unass_lit);
+      }
+    }
+  }
+  // While not all literals propagated.
+  // Propagated next literal 'lit' on trail.
+  // Increase 'propagations'.
+  // Go over all clauses in which '-lit' occurs.
+  // For each clause check whether it is satisfied, falsified, or forcing.
+  // If clause falsified return 'false' (increase 'conflicts').
+  // If forcing assign the forced unit.
+  // If all literals propagated without finding a falsified clause (conflict):
+  return true;
+}
+
+#endif
+
 static int is_power_of_two(size_t n) { return n && !(n & (n - 1)); }
+
+#ifdef HeuristicsTest
+
+static int decision(void) {
+  // assign a literal in the clause with the most unassigned values.
+  // probably not the best way with these examples with few literals per clause
+  int clause_nbr = 0;
+  int clause_nbr_tmp = -1;
+  int nbr_unass = 0;
+  for (auto c : clauses) {
+    int nbr_unass_tmp = 0;
+    clause_nbr_tmp++;
+    for (auto lit: *c) {
+      if (values[lit] == 0) nbr_unass_tmp++;
+    }
+    if (nbr_unass_tmp > nbr_unass) {
+      nbr_unass = nbr_unass_tmp;
+      clause_nbr = clause_nbr_tmp;
+    }
+  }
+  int lit = 0;
+  int lit_tmp = 0;
+  for (auto lit_c : *clauses[clause_nbr]) {
+    if (values[lit_c] == 0) {
+      lit_tmp = lit_c;
+      break;
+    }
+  }
+  lit = lit_tmp;
+  return lit;
+}
+
+#endif
 
 static int decide(void) {
   decisions++;
   int res = 0;
   // simply choose the first unassigned variable
+  #ifdef HeuristicsTest
+  res = decision();
+  #else
   for (int i = 1; i <= variables; i++)
     if (values[i] == 0 && values[-i] == 0) {
       res = i;
       break;
     }
+  #endif
   level++;
   control.push_back(trail.size());
   assign(res);

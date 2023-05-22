@@ -1,0 +1,89 @@
+c ---- [ banner ] ------------------------------------------------------------
+c
+c Kissat SAT Solver
+c 
+c Copyright (c) 2021-2022 Armin Biere University of Freiburg
+c Copyright (c) 2019-2021 Armin Biere Johannes Kepler University Linz
+c 
+c Version 3.0.0 97917ddf2b12adc6f63c7b2a5a403a1ee7d81836
+c Apple clang version 14.0.3 (clang-1403.0.22.14.1) -W -Wall -O3 -DNDEBUG
+c Wed Apr 19 09:35:49 CEST 2023 Darwin MacBook-Pro.fritz.box 22.4.0 arm64
+c
+c ---- [ parsing ] -----------------------------------------------------------
+c
+c opened and reading DIMACS file:
+c
+c   prime4.cnf
+c
+c parsed 'p cnf 20 49' header
+c closing input after reading 462 bytes
+c finished parsing after 0.00 seconds
+c
+c ---- [ solving ] -----------------------------------------------------------
+c
+c  seconds switched rate      trail variables
+c         MB reductions conflicts glue  remaining
+c          level restarts redundant irredundant
+c
+c *  0.00  0 0 0 0  0 0   0   0 0% 0 48  9 43%
+c {  0.00  0 0 0 0  0 0   0   0 0% 0 48  9 43%
+c }  0.00  0 0 0 0  0 0   0   0 0% 0 48  9 43%
+c 1  0.00  0 0 0 0  0 0   0   0 0% 0 48  9 43%
+c
+c ---- [ result ] ------------------------------------------------------------
+c
+s SATISFIABLE
+v 1 -2 3 -4 -5 -6 7 -8 -9 -10 -11 12 -13 14 -15 -16 17 18 19 20 0
+c
+c ---- [ profiling ] ---------------------------------------------------------
+c
+c           0.00   24.89 %  parse
+c           0.00    8.02 %  search
+c           0.00    2.95 %  focused
+c           0.00    0.00 %  simplify
+c =============================================
+c           0.00  100.00 %  total
+c
+c ---- [ statistics ] --------------------------------------------------------
+c
+c conflicts:                                0                0.00 per second
+c decisions:                                1                0.00 per conflict
+c propagations:                            20            10604    per second
+c
+c ---- [ resources ] ---------------------------------------------------------
+c
+c maximum-resident-set-size:       1459617792 bytes       1392 MB
+c process-time:                                              0.00 seconds
+c
+c ---- [ shutting down ] -----------------------------------------------------
+c
+c exit 10
+
+c BabySAT DPLL SAT Solver
+c
+c Copyright (c) 2022-2023, Timo Müller
+c Version 0.0.0 
+c Compiled with 'g++ -Wall -O3 -DNDEBUG'
+c
+c reading from 'prime4.cnf'
+c parsed header 'p cnf 20 49'
+c
+c             decisions             variables
+c   seconds              conflicts            remaining
+c
+c *    0.00           0           0        19  95%
+c d    0.00           1           0         9  45%
+c d    0.00           2           0         9  45%
+c 1    0.00           2           1         9  45%
+c
+s SATISFIABLE
+v 1 -2 3 -4 -5 -6 7 -8 -9 -10 -11 12 -13 14 -15 -16 17 18 19 20 0
+c
+c conflicts:                     1       615.76 per second
+c decisions:                     2      1231.53 per second
+c propagations:                 27         0.02 million per second
+c
+c process-time:               0.00 seconds
+c
+c exit code 10
+

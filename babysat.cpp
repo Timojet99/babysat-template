@@ -536,10 +536,12 @@ static int decision(void) {
 static int decide(void) {
   decisions++;
   int res = 0;
-// simply choose the first unassigned variable
+  // if defined, use the decision heuristic that chooses the clause with the
+  // most unassigned literals
 #ifdef HeuristicsTest
   res = decision();
 #else
+  // simply choose the first unassigned variable
   for (int i = 1; i <= variables; i++)
     if (values[i] == 0 && values[-i] == 0) {
       res = i;

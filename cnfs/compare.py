@@ -26,13 +26,15 @@ for dir in dirs:
 for i in range(10):
     start = time.time()
     for test in tests:
-        os.system("/Users/timo/Kissat/kissat/build/kissat " + test)
+        os.system("/Users/timo/Kissat/kissat/build/kissat " + test + " -q")
+        #print("/Users/timo/Kissat/kissat/build/kissat " + test + " -q")
     end = time.time()
     time1.append(end - start)
 
     start = time.time()
     for test in tests:
-        os.system(".././babysat " + test)
+        os.system(".././babysat " + test + " -q")
+        #print(".././babysat " + test + " -q")
     end = time.time()
     time2.append(end - start)
 

@@ -6,10 +6,9 @@ and in addition get it working.
 
 For that you need to implement are the following:
 
- - adding clauses (`add_clause`)
+ - figuring out when your formula is satisfied (`satisfied`)
  - assigning literals (`assign`)
  - propagation of literals (`propagate`)
- - figuring out when your formula is satisfied (`satisfied`)
  - variable section heuristics (`decide`)
  - unassigning literals (`unassign`)
  - backtracking (`backtrack`)

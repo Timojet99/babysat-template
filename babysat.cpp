@@ -67,7 +67,7 @@ struct Clause {
 // On Average it is about 50% slower than the original
 // Without the heuristic prime65537.cnf takes about 16x the time compared
 // with kissat, prime4294967297.cnf is about the same speed as kissat
-// #define HeuristicsTest
+//#define HeuristicsTest
 
 static int variables;       // Variable range: 1,..,<variables>
 static signed char *values; // Assignment 0=unassigned,-1=false,1=true.
@@ -75,6 +75,10 @@ static unsigned *levels;    // Maps variables to their level;
 
 static std::vector<Clause *> clauses;
 static std::vector<Clause *> *matrix;
+
+#ifdef HeuristicsTest
+static std::vector<int> lit_occurrences;
+#endif
 
 static Clause *empty_clause; // Empty clause found.
 
@@ -324,6 +328,10 @@ static void assign(int lit) {
   levels[abs(lit)] = level;
   if (!level)
     fixed++;
+
+  #ifdef HeuriticsTest
+  lit_occurrences[abs(lit)] = 0;
+  #endif
   // Set 'values[lit]' and 'values[-lit]'.
   // Set 'levels[abs(lit)]'.
   // Push literal on trail.
@@ -439,6 +447,8 @@ static void parse(void) {
 // conflict propagating a literal also detects unit clauses and
 // then assign the forced literal by that unit clause.
 
+#ifdef HeuristicsTest
+
 static bool propagate(void) {
   while (propagated != trail.size()) {
     // std::cout << "0" << std::endl;
@@ -476,7 +486,59 @@ static bool propagate(void) {
           continue;
         }
       }
-      if (unassigned == 0) { // ass_true == 0) {
+      if (unassigned == 0) { //&& ass_true == 0) {
+        conflicts++;
+        // std::cout << "FALSIFIED CLAUSE DETECTED" << std::endl;
+        return false; // falsified clause
+      }
+      if (unassigned == 1) { //&& ass_true == 0) {
+        assign(unass_lit);
+      }
+    }
+  }
+  return true;
+}
+
+#else
+
+static bool propagate(void) {
+  while (propagated != trail.size()) {
+    // std::cout << "0" << std::endl;
+    // std::cout << "PROPAGATE" << std::endl;
+    // std::cout << "PROPAGATED: " << propagated << std::endl;
+    // std::cout << "TRAILSIZE: " << trail.size() << std::endl;
+    int lit = trail[propagated];
+    propagated++;
+    propagations++;
+    // std::cout << "LIT: " << lit << std::endl;
+    // std::cout << "0" << std::endl;
+    for (auto c : matrix[-lit]) {
+      if (c == empty_clause)
+        return false;
+      if (satisfied(c))
+        continue;
+      int unassigned = 0;
+      int unass_lit = 0;
+      // bool falsified = false;
+      // int ass_true = 0;
+      for (auto lit_c : *c) {
+        if (lit_c == -lit)
+          continue;
+        if (values[lit_c] < 0) {
+          continue;
+        }
+        /*if (values[lit_c] > 0) {
+          ass_true++;
+          continue;
+        }*/
+        if (values[lit_c] == 0) {
+          unassigned++;
+          // std::cout << "debug ----- unass_lit: " << lit_c << std::endl;
+          unass_lit = lit_c;
+          continue;
+        }
+      }
+      if (unassigned == 0) { //&& ass_true == 0) {
         conflicts++;
         // std::cout << "FALSIFIED CLAUSE DETECTED" << std::endl;
         return false; // falsified clause
@@ -497,11 +559,13 @@ static bool propagate(void) {
   return true;
 }
 
+#endif
+
 static int is_power_of_two(size_t n) { return n && !(n & (n - 1)); }
 
 #ifdef HeuristicsTest
 
-static int decision(void) {
+static int decision1(void) {
   // assign a literal in the clause with the most unassigned values.
   // probably not the best way with these examples with few literals per clause
   int clause_nbr = 0;
@@ -531,6 +595,17 @@ static int decision(void) {
   return lit;
 }
 
+static int decision2(void) {
+  // assign a literal based on the number of occurrences of the literal in the
+  // clauses
+  int res = 0;
+  std::vector<int>::iterator result;
+  int max = *std::max_element(lit_occurrences.begin(), lit_occurrences.end());
+  res = std::distance(lit_occurrences.begin(), std::find(lit_occurrences.begin(), lit_occurrences.end(), max));
+  std::cout << res << std::endl;
+  return res;
+}
+
 #endif
 
 static int decide(void) {
@@ -539,7 +614,8 @@ static int decide(void) {
   // if defined, use the decision heuristic that chooses the clause with the
   // most unassigned literals
 #ifdef HeuristicsTest
-  res = decision();
+  // res = decision1();
+  // res = decision2();
 #else
   // simply choose the first unassigned variable
   for (int i = 1; i <= variables; i++)
@@ -592,29 +668,45 @@ static void backtrack() {
 static const int satisfiable = 10;   // Exit code for satisfiable and
 static const int unsatisfiable = 20; // unsatisfiable formulas.
 
+#ifdef HeuristicsTest
+
+static void countOccurences(void) {
+  lit_occurrences.push_back(0);
+  for (int i = 0; i < variables; i++) {
+      lit_occurrences.push_back(matrix[i].size());
+  }
+}
+#endif
+
 static int dpll(void) {
   // As a side note, I did copy this from the Lecture as Prof. Biere introduced
   // the solver-template.
+  int i = 0;
   for (;;) {
-    // std::cout << "Propagate check " << std::endl;
+    //std::cout << "Propagate check " << std::endl;
     if (!propagate())
       return unsatisfiable;
-    // std::cout << "satisfiable check " << std::endl;
+    //std::cout << "satisfiable check " << std::endl;
     if (satisfied())
       return satisfiable;
-    // std::cout << "decide " << std::endl;
+    //std::cout << "decide " << std::endl;
     int x = decide();
-    // std::cout << "dpll recursive " << std::endl;
+    //std::cout << "dpll recursive " << std::endl;
     if (dpll() == satisfiable)
       return satisfiable;
-    // std::cout << "backtrack " << std::endl;
+    //std::cout << "backtrack " << std::endl;
     backtrack();
-    // std::cout << "assign negative " << std::endl;
+    //std::cout << "assign negative " << std::endl;
     assign(-x);
   }
 }
 
 static int solve(void) {
+
+  #ifdef HeuristicsTest
+  countOccurences();
+  #endif
+
   if (empty_clause)
     return unsatisfiable;
   return dpll();
@@ -722,6 +814,16 @@ int main(int argc, char **argv) {
   report('*');
 
   int res = solve();
+  // Print *matrix into a readable format
+  /*std::cout << "print start" << std::endl;
+  for (auto clause : matrix[-4]) {
+    for (auto lit : *clause) {
+      std::cout << lit << " ";
+    }
+    std::cout << "SIZE: " << clause->size << std::endl;
+    std::cout << std::endl;
+  }
+  std::cout << "print end" << std::endl;*/
   report(res == 10 ? '1' : res == 20 ? '0' : '?');
   line();
 

@@ -1,0 +1,3 @@
+- Remember how many clauses does that literal cover
+- Remember how many unassigned literals a clause has
+- Take the literal that maxes out on both metrics 

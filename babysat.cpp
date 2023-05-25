@@ -441,11 +441,6 @@ static void parse(void) {
   verbose("parsed %zu literals in %d clauses", literals, parsed);
 }
 
-// Return 'false' if propagation detects an empty clause otherwise if it
-// completes propagating all literals since the last time it was called
-// without finding an empty clause it returns 'true'.  Beside finding
-// conflict propagating a literal also detects unit clauses and
-// then assign the forced literal by that unit clause.
 
 #ifdef HeuristicsTest
 
@@ -500,6 +495,12 @@ static bool propagate(void) {
 }
 
 #else
+
+// Return 'false' if propagation detects an empty clause otherwise if it
+// completes propagating all literals since the last time it was called
+// without finding an empty clause it returns 'true'.  Beside finding
+// conflict propagating a literal also detects unit clauses and
+// then assign the forced literal by that unit clause.
 
 static bool propagate(void) {
   while (propagated != trail.size()) {
@@ -672,7 +673,7 @@ static const int unsatisfiable = 20; // unsatisfiable formulas.
 
 static void countOccurences(void) {
   lit_occurrences.push_back(0);
-  for (int i = 0; i < variables; i++) {
+  for (int i = 1; i < variables; i++) {
       lit_occurrences.push_back(matrix[i].size());
   }
 }
@@ -681,7 +682,6 @@ static void countOccurences(void) {
 static int dpll(void) {
   // As a side note, I did copy this from the Lecture as Prof. Biere introduced
   // the solver-template.
-  int i = 0;
   for (;;) {
     //std::cout << "Propagate check " << std::endl;
     if (!propagate())

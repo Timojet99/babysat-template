@@ -10,6 +10,7 @@ colorama_init()
 
 time1 = []
 time2 = []
+time3 = []
 
 tests = []
 dirs = os.listdir()
@@ -23,7 +24,7 @@ for dir in dirs:
                 continue
             tests.append(dir)
 
-for i in range(10):
+for i in range(100):
     start = time.time()
     for test in tests:
         os.system("/Users/timo/Kissat/kissat/build/kissat " + test + " -q")
@@ -38,6 +39,13 @@ for i in range(10):
     end = time.time()
     time2.append(end - start)
 
+    start = time.time()
+    for test in tests:
+        os.system("../../babysat-dpll/./babysat " + test + " -q")
+        #print(".././babysat " + test + " -q")
+    end = time.time()
+    time3.append(end - start)
+
 print("\n \n \n \n")
 print("\n \n \n \n")
 print("\n \n \n \n")
@@ -48,24 +56,35 @@ print("\n \n \n \n")
 
 # Time 1 is Kissat
 # Time 2 is Babysat
+# Time 3 is Babysat-Master
 time1_sum = 0
 time2_sum = 0
 time1_max = 0
 time2_max = 0
+time3_sum = 0
+time3_max = 0
 for i in range(len(time1)):
     time1_sum += time1[i]
     time2_sum += time2[i]
+    time3_sum += time3[i]
     if time1[i] > time1_max:
         time1_max = time1[i]
     if time2[i] > time2_max:
         time2_max = time2[i]
+    if time3[i] > time3_max:
+        time3_max = time3[i]
 time1_avg = time1_sum / len(time1)
 time2_avg = time2_sum / len(time2)
+time3_avg = time3_sum / len(time3)
 
 print(Fore.GREEN + "Kissat: \n" + Style.RESET_ALL +
       "    Average Time: " + str(round(time1_avg, 5)) + "s \n" +
       "    Max Time: " + str(round(time1_max, 5)) + "s \n")
 print()
-print(Fore.RED + "Babysat: \n" + Style.RESET_ALL +
+print(Fore.RED + "Babysat-Timo: \n" + Style.RESET_ALL +
       "    Average Time: " + str(round(time2_avg, 5)) + "s \n" +
       "    Max Time: " + str(round(time2_max, 5)) + "s \n")
+print()
+print(Fore.BLUE + "Babysat-Master: \n" + Style.RESET_ALL +
+      "    Average Time: " + str(round(time3_avg, 5)) + "s \n" +
+      "    Max Time: " + str(round(time3_max, 5)) + "s \n")

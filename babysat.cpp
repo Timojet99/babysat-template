@@ -59,6 +59,11 @@ struct Clause {
   int *end() { return literals + size; }
 };
 
+struct Counter {
+  unsigned count; // Number of non-false literals left.
+  unsigned sum; // Sum of non-false literals.
+};
+
 #define FALSE_ASSIGNMENT -1
 #define TRUE_ASSIGNMENT 1
 #define UNASSIGNED 0
@@ -76,17 +81,25 @@ static unsigned *levels;    // Maps variables to their level;
 static std::vector<Clause *> clauses;
 static std::vector<Clause *> *matrix;
 
+static std::vector<Counter> clause_counters;
+static std::vector<Counter> *matrix_counters;
+
 #ifdef HeuristicsTest
 static std::vector<int> lit_occurrences;
 #endif
 
 static Clause *empty_clause; // Empty clause found.
+static Counter *empty_counter; // Empty counter found.
 
-static std::vector<int> trail;
-static std::vector<size_t> control;
+// static std::vector<int> trail;
+static int *trail;
+static int *assigned;
+static int *propagated;
+static std::vector<int *> control;
 
 static unsigned level;    // Decision level.
-static size_t propagated; // Next position on trail to propagate.
+
+static size_t limit = -1;
 
 // Statistics:
 
@@ -279,10 +292,10 @@ static void initialize(void) {
   matrix += variables;
   values += variables;
 
-  for (int lit = -variables; lit <= variables; lit++)
-    values[lit] = 0;
+  //for (int lit = -variables; lit <= variables; lit++)
+  //  values[lit] = 0;
 
-  assert(!propagated);
+  propagated = assigned = trail = new int[size];
   assert(!level);
 }
 
@@ -294,6 +307,8 @@ static void delete_clause(Clause *c) {
 static void release(void) {
   for (auto c : clauses)
     delete_clause(c);
+
+  delete[] trail;
 
   matrix -= variables;
   values -= variables;
@@ -314,17 +329,19 @@ static bool satisfied(Clause *c) {
 // Check whether all clauses are satisfied.
 
 static bool satisfied() {
-  for (auto c : clauses)
-    if (!satisfied(c))
-      return false;
-  return true;
+  //for (auto c : clauses)
+  //  if (!satisfied(c))
+  //    return false;
+  //return true;
+  return assigned - trail == variables;
 }
 
 static void assign(int lit) {
   debug("assign %s", debug(lit));
   values[lit] = TRUE_ASSIGNMENT;
   values[-lit] = FALSE_ASSIGNMENT;
-  trail.push_back(lit);
+  //trail.push_back(lit);
+  *assigned++ = lit;
   levels[abs(lit)] = level;
   if (!level)
     fixed++;
@@ -503,61 +520,39 @@ static bool propagate(void) {
 // then assign the forced literal by that unit clause.
 
 static bool propagate(void) {
-  while (propagated != trail.size()) {
+  while (propagated != assigned) {
     // std::cout << "0" << std::endl;
     // std::cout << "PROPAGATE" << std::endl;
     // std::cout << "PROPAGATED: " << propagated << std::endl;
     // std::cout << "TRAILSIZE: " << trail.size() << std::endl;
-    int lit = trail[propagated];
-    propagated++;
+    int lit = *propagated++;
     propagations++;
     // std::cout << "LIT: " << lit << std::endl;
     // std::cout << "0" << std::endl;
     for (auto c : matrix[-lit]) {
-      if (c == empty_clause)
-        return false;
-      if (satisfied(c))
-        continue;
+      //if (satisfied(c))
+      //  continue;
+      int unit = 0;
       int unassigned = 0;
       int unass_lit = 0;
-      // bool falsified = false;
-      // int ass_true = 0;
+      bool satisfied = false;
       for (auto lit_c : *c) {
-        if (lit_c == -lit)
-          continue;
-        if (values[lit_c] < 0) {
-          continue;
+        signed char value = values[lit_c];
+        if (value < 0) continue;
+        if (value > 0 || unit) goto NEXT_CLAUSE;
+          unit = lit_c;
         }
-        /*if (values[lit_c] > 0) {
-          ass_true++;
-          continue;
-        }*/
-        if (values[lit_c] == 0) {
-          unassigned++;
-          // std::cout << "debug ----- unass_lit: " << lit_c << std::endl;
-          unass_lit = lit_c;
-          continue;
-        }
-      }
-      if (unassigned == 0) { //&& ass_true == 0) {
+      if (!unit) {
         conflicts++;
-        // std::cout << "FALSIFIED CLAUSE DETECTED" << std::endl;
-        return false; // falsified clause
+        debug(c, "conflicting");
+        return false;
       }
-      if (unassigned == 1) { //&& ass_true == 0) {
-        assign(unass_lit);
+      debug(c, "forced %s by", debug(unit));
+      assign(unit);
+      NEXT_CLAUSE:;
       }
     }
-  }
-  // While not all literals propagated.
-  // Propagated next literal 'lit' on trail.
-  // Increase 'propagations'.
-  // Go over all clauses in which '-lit' occurs.
-  // For each clause check whether it is satisfied, falsified, or forcing.
-  // If clause falsified return 'false' (increase 'conflicts').
-  // If forcing assign the forced unit.
-  // If all literals propagated without finding a falsified clause (conflict):
-  return true;
+    return true;
 }
 
 #endif
@@ -597,8 +592,8 @@ static int decision1(void) {
 }
 
 static int decision2(void) {
-  // assign a literal based on the number of occurrences of the literal in the
-  // clauses
+  // assign a literal based on the number of occurrences of unassigned
+  // literal in the clauses
   int res = 0;
   std::vector<int>::iterator result;
   int max = *std::max_element(lit_occurrences.begin(), lit_occurrences.end());
@@ -610,8 +605,10 @@ static int decision2(void) {
 #endif
 
 static int decide(void) {
+  //if (*assigned == variables)
+  //  return 0;
   decisions++;
-  int res = 0;
+  int res = 1;
   // if defined, use the decision heuristic that chooses the clause with the
   // most unassigned literals
 #ifdef HeuristicsTest
@@ -619,14 +616,11 @@ static int decide(void) {
   // res = decision2();
 #else
   // simply choose the first unassigned variable
-  for (int i = 1; i <= variables; i++)
-    if (values[i] == 0 && values[-i] == 0) {
-      res = i;
-      break;
-    }
+  while (assert(res <= variables), values[res])
+    res++;
 #endif
   level++;
-  control.push_back(trail.size());
+  control.push_back(assigned);
   assign(res);
   // Find a variable/literal which is not assigned yet.
   // Increase decision level.
@@ -648,24 +642,16 @@ static void backtrack() {
   // std::cout << level << std::endl;
   assert(level);
   debug("backtracking to level %d", level - 1);
-  int lit;
-  while (trail.size() > control.back()) {
-    lit = trail.back();
-    unassign(lit);
-    trail.pop_back();
-  }
-  propagated = trail.size();
-  level--;
+  int *before = control.back();
   control.pop_back();
-  // Pop previous trail from control stack.
-  // Unassign all literals starting from previous to current trail height.
-  // Set 'propagted' to trail height.
-  // Decrement decision level.
+  while (assigned != before) unassign(*--assigned);
+  propagated = before;
+  level--;
 }
 
 // The SAT competition standardized exit codes (the 'exit (code)' or 'return
 // res' in 'main').  All other exit codes denote unsolved or error.
-
+static const int unknown = 0;        // Exit code for unknown.
 static const int satisfiable = 10;   // Exit code for satisfiable and
 static const int unsatisfiable = 20; // unsatisfiable formulas.
 
@@ -680,23 +666,13 @@ static void countOccurences(void) {
 #endif
 
 static int dpll(void) {
-  // As a side note, I did copy this from the Lecture as Prof. Biere introduced
-  // the solver-template.
   for (;;) {
-    //std::cout << "Propagate check " << std::endl;
-    if (!propagate())
-      return unsatisfiable;
-    //std::cout << "satisfiable check " << std::endl;
-    if (satisfied())
-      return satisfiable;
-    //std::cout << "decide " << std::endl;
+    if (!propagate()) return unsatisfiable;
+    if (limit >= 0 && conflicts >= limit) return unknown;
+    if (satisfied()) return satisfiable;
     int x = decide();
-    //std::cout << "dpll recursive " << std::endl;
-    if (dpll() == satisfiable)
-      return satisfiable;
-    //std::cout << "backtrack " << std::endl;
+    if (dpll() == satisfiable) return satisfiable;
     backtrack();
-    //std::cout << "assign negative " << std::endl;
     assign(-x);
   }
 }
@@ -785,6 +761,10 @@ int main(int argc, char **argv) {
       verbosity = 1;
     else if (!strcmp(arg, "-n") || !strcmp(arg, "--no-witness"))
       witness = false;
+    else if (!strcmp(arg, "-c")) {
+      if (++i == argc) die("argument to '-c' missing");
+      limit = atoi(argv[i]);
+    }
     else if (arg[0] == '-')
       die("invalid option '%s' (try '-h')", arg);
     else if (file_name)

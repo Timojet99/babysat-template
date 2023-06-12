@@ -15,15 +15,18 @@ run () {
   err=$name.err
   cnf=$name.cnf
   rm -f $log $err
-  cmd="./$solver $cnf"
-  echo $cmd
+  cmd="./$solver -c 1000000 $cnf"
+  printf "%s" "$cmd"
   $cmd 1>$log 2>$err
   status=$?
   if [ ! "$status" = "$expected" ]
   then
+    echo
     echo "test.sh: error: '$cmd' exit status '$status' (expected '$expected')"
     exit 1
   fi
+  seconds=`awk '/process-time/{print $3}' $log`
+  echo " # $status ($seconds sec)"
 }
 
 run 20 false
@@ -63,13 +66,13 @@ run 10 prime1369
 run 10 prime1681
 run 10 prime2209
 
-#run 20 add16
-#run 20 add32
-#run 20 add64
-#run 20 add128
-
 run 20 prime65537
 
 # This is a harder one
 #
 run 20 prime4294967297
+
+run 0 add16
+run 0 add32
+run 0 add64
+run 0 add128

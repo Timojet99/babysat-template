@@ -43,22 +43,6 @@ static int verbosity; // -1=quiet, 0=normal, 1=verbose, INT_MAX=logging
 
 // Global options fixed at compile time.
 
-struct Clause {
-  unsigned id; // For debugging and sorting.
-  unsigned size;
-  int literals[];
-
-  // The following two functions allow simple ranged-based for-loop
-  // iteration over Clause literals with the following idiom:
-  //
-  //   Clause *c = ...
-  //   for (auto lit : *c)
-  //     do_something_with (lit);
-  //
-  int *begin() { return literals; }
-  int *end() { return literals + size; }
-};
-
 struct Counter {
   unsigned count; // Number of non-false literals left.
   int sum; // Sum of non-false literals.
@@ -74,17 +58,9 @@ static int variables;       // Variable range: 1,..,<variables>
 static signed char *values; // Assignment 0=unassigned,-1=false,1=true.
 static unsigned *levels;    // Maps variables to their level;
 
-static std::vector<Clause *> clauses;
-static std::vector<Clause *> *matrix;
-
 static std::vector<Counter *> clause_counters;
 static std::vector<Counter *> *matrix_counters;
 
-#ifdef HeuristicsTest
-static std::vector<int> lit_occurrences;
-#endif
-
-static Clause *empty_clause; // Empty clause found.
 static Counter *empty_counter; // Empty counter found.
 
 // static std::vector<int> trail;
@@ -278,28 +254,17 @@ static void initialize(void) {
   unsigned twice = 2 * size;
 
   values = new signed char[twice];
-  matrix = new std::vector<Clause *>[twice];
   matrix_counters = new std::vector<Counter *>[twice];
 
   levels = new unsigned[size];
 
   // We subtract 'variables' in order to be able to access
   // the arrays with a negative index (valid in C/C++).
-
-  matrix += variables;
   values += variables;
   matrix_counters += variables;
 
-  //for (int lit = -variables; lit <= variables; lit++)
-  //  values[lit] = 0;
-
   propagated = assigned = trail = new int[size];
   assert(!level);
-}
-
-static void delete_clause(Clause *c) {
-  debug(c, "delete");
-  delete[] c;
 }
 
 static void delete_counter(Counter *c) {
@@ -307,17 +272,12 @@ static void delete_counter(Counter *c) {
 }
 
 static void release(void) {
-  for (auto c : clauses)
-    delete_clause(c);
-
   delete[] trail;
 
-  matrix -= variables;
   values -= variables;
 
   matrix_counters -= variables;
 
-  delete[] matrix;
   delete[] values;
 
   delete[] matrix_counters;
@@ -325,20 +285,9 @@ static void release(void) {
   delete[] levels;
 }
 
-static bool satisfied(Clause *c) {
-  for (auto lit : *c)
-    if (values[lit] > 0)
-      return true;
-  return false;
-}
-
 // Check whether all clauses are satisfied.
 
 static bool satisfied() {
-  //for (auto c : clauses)
-  //  if (!satisfied(c))
-  //    return false;
-  //return true;
   return assigned - trail == variables;
 }
 
@@ -346,7 +295,6 @@ static void assign(int lit) {
   debug("assign %s", debug(lit));
   values[lit] = TRUE_ASSIGNMENT;
   values[-lit] = FALSE_ASSIGNMENT;
-  //trail.push_back(lit);
   *assigned++ = lit;
   levels[abs(lit)] = level;
   if (!level)
@@ -361,55 +309,32 @@ static void assign(int lit) {
   // If root-level (so level == 0) increase fixed.
 }
 
-static void connect_literal(int lit, Clause *c) {
-  debug(c, "connecting %s to", debug(lit));
-  matrix[lit].push_back(c);
-}
 static void connect_literal(int lit, Counter *c) {
   matrix_counters[lit].push_back(c);
 }
 
-static Clause *add_clause(std::vector<int> &literals) {
+static Counter *add_clause(std::vector<int> &literals) {
   size_t size = literals.size();
-  size_t bytes = sizeof(struct Clause) + size * sizeof(int);
   size_t bytes_counter = sizeof(struct Counter) + size * sizeof(int);
-  Clause *c = (Clause *)new char[bytes];
   Counter *counter = (Counter *)new char[bytes_counter];
-
-  assert(size <= UINT_MAX);
-  c->id = added++;
-
-  assert(clauses.size() <= (size_t)INT_MAX);
-  c->size = size;
 
   counter->count = 0;
   counter->sum = 0;
 
-  int *q = c->literals;
   for (auto lit : literals) {
-    *q++ = lit;
     counter->sum += lit;
     counter->count++;
-  }
-  //std::cout << "Clause Sum: " << counter->sum << std::endl;
-
-  debug(c, "new");
-
-  clauses.push_back(c); // Save it on global stack of clauses.
-  clause_counters.push_back(counter);
-
-  // Connect the literals of the clause in the matrix.
-
-  for (auto lit : *c) {
-    connect_literal(lit, c);
     connect_literal(lit, counter);
   }
 
+  debug(c, "new");
+
+  clause_counters.push_back(counter);
+
   // Handle the special case of empty and unit clauses.
-  // TODO: check empty clauses with counters instead.
   if (!size) {
     debug(c, "parsed empty clause");
-    empty_clause = c;
+    empty_counter = counter;
   } else if (size == 1) {
     int unit = literals[0];
     signed char value = values[unit];
@@ -418,11 +343,11 @@ static Clause *add_clause(std::vector<int> &literals) {
     }
     else if (value < 0) {
       debug(c, "inconsistent unit clause");
-      empty_clause = c;
+      empty_counter = counter;
     }
   }
 
-  return c;
+  return counter;
 }
 
 static const char *file_name;
@@ -530,8 +455,8 @@ static int is_power_of_two(size_t n) { return n && !(n & (n - 1)); }
 
 
 static int decide(void) {
-  //if (*assigned == variables)
-  //  return 0;
+  if (*assigned == variables)
+  return 0;
   decisions++;
   int res = 1;
   // simply choose the first unassigned variable
@@ -613,7 +538,7 @@ static int solve(void) {
   countOccurences();
   #endif
 
-  if (empty_clause)
+  if (empty_counter)
     return unsatisfiable;
   return dpll();
 }
@@ -624,7 +549,7 @@ static int solve(void) {
 
 static void check_model(void) {
   debug("checking model");
-  for (auto c : clauses) {
+  /*for (auto c : clauses) {
     if (satisfied(c))
       continue;
     fputs("babysat: unsatisfied clause:\n", stderr);
@@ -636,6 +561,17 @@ static void check_model(void) {
     fflush(stderr);
     abort();
     exit(1);
+  }*/
+  for (int i = variables; i > 0; i--) {
+    if (values[i] == 0) {
+      fputs("babysat: unassigned clauses:\n", stderr);
+      fprintf(stderr, "%d ", i);
+      fprintf(stderr, "%d " , values[i]);
+      fputs("0\n", stderr);
+      fflush(stderr);
+      abort();
+      exit(1);
+    }
   }
 }
 

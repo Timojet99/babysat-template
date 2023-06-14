@@ -7,8 +7,8 @@ dirs.sort()
 for dir in dirs:
     if os.path.isfile(dir):
         if dir.split('.')[1] == 'cnf':
-            if dir in ["add16.cnf", "add32.cnf", "add64.cnf", "add128.cnf"]:
-                continue
+            #if dir in ["add16.cnf", "add32.cnf", "add64.cnf", "add128.cnf"]:
+            #    continue
             tests.append(dir)
 
 for test in tests:

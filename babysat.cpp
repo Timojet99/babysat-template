@@ -61,17 +61,13 @@ struct Clause {
 
 struct Counter {
   unsigned count; // Number of non-false literals left.
-  unsigned sum; // Sum of non-false literals.
+  int sum; // Sum of non-false literals.
 };
 
 #define FALSE_ASSIGNMENT -1
 #define TRUE_ASSIGNMENT 1
 #define UNASSIGNED 0
 
-// This works for all cases except for prime65537.cnf
-// On Average it is about 50% slower than the original
-// Without the heuristic prime65537.cnf takes about 16x the time compared
-// with kissat, prime4294967297.cnf is about the same speed as kissat
 //#define HeuristicsTest
 
 static int variables;       // Variable range: 1,..,<variables>
@@ -81,8 +77,8 @@ static unsigned *levels;    // Maps variables to their level;
 static std::vector<Clause *> clauses;
 static std::vector<Clause *> *matrix;
 
-static std::vector<Counter> clause_counters;
-static std::vector<Counter> *matrix_counters;
+static std::vector<Counter *> clause_counters;
+static std::vector<Counter *> *matrix_counters;
 
 #ifdef HeuristicsTest
 static std::vector<int> lit_occurrences;
@@ -283,6 +279,7 @@ static void initialize(void) {
 
   values = new signed char[twice];
   matrix = new std::vector<Clause *>[twice];
+  matrix_counters = new std::vector<Counter *>[twice];
 
   levels = new unsigned[size];
 
@@ -291,6 +288,7 @@ static void initialize(void) {
 
   matrix += variables;
   values += variables;
+  matrix_counters += variables;
 
   //for (int lit = -variables; lit <= variables; lit++)
   //  values[lit] = 0;
@@ -304,6 +302,10 @@ static void delete_clause(Clause *c) {
   delete[] c;
 }
 
+static void delete_counter(Counter *c) {
+  delete[] c;
+}
+
 static void release(void) {
   for (auto c : clauses)
     delete_clause(c);
@@ -313,8 +315,12 @@ static void release(void) {
   matrix -= variables;
   values -= variables;
 
+  matrix_counters -= variables;
+
   delete[] matrix;
   delete[] values;
+
+  delete[] matrix_counters;
 
   delete[] levels;
 }
@@ -359,11 +365,16 @@ static void connect_literal(int lit, Clause *c) {
   debug(c, "connecting %s to", debug(lit));
   matrix[lit].push_back(c);
 }
+static void connect_literal(int lit, Counter *c) {
+  matrix_counters[lit].push_back(c);
+}
 
 static Clause *add_clause(std::vector<int> &literals) {
   size_t size = literals.size();
   size_t bytes = sizeof(struct Clause) + size * sizeof(int);
+  size_t bytes_counter = sizeof(struct Counter) + size * sizeof(int);
   Clause *c = (Clause *)new char[bytes];
+  Counter *counter = (Counter *)new char[bytes_counter];
 
   assert(size <= UINT_MAX);
   c->id = added++;
@@ -371,29 +382,40 @@ static Clause *add_clause(std::vector<int> &literals) {
   assert(clauses.size() <= (size_t)INT_MAX);
   c->size = size;
 
+  counter->count = 0;
+  counter->sum = 0;
+
   int *q = c->literals;
-  for (auto lit : literals)
+  for (auto lit : literals) {
     *q++ = lit;
+    counter->sum += lit;
+    counter->count++;
+  }
+  //std::cout << "Clause Sum: " << counter->sum << std::endl;
 
   debug(c, "new");
 
   clauses.push_back(c); // Save it on global stack of clauses.
+  clause_counters.push_back(counter);
 
   // Connect the literals of the clause in the matrix.
 
-  for (auto lit : *c)
+  for (auto lit : *c) {
     connect_literal(lit, c);
+    connect_literal(lit, counter);
+  }
 
   // Handle the special case of empty and unit clauses.
-
+  // TODO: check empty clauses with counters instead.
   if (!size) {
     debug(c, "parsed empty clause");
     empty_clause = c;
   } else if (size == 1) {
     int unit = literals[0];
     signed char value = values[unit];
-    if (!value)
+    if (!value) {
       assign(unit);
+    }
     else if (value < 0) {
       debug(c, "inconsistent unit clause");
       empty_clause = c;
@@ -459,59 +481,6 @@ static void parse(void) {
 }
 
 
-#ifdef HeuristicsTest
-
-static bool propagate(void) {
-  while (propagated != trail.size()) {
-    // std::cout << "0" << std::endl;
-    // std::cout << "PROPAGATE" << std::endl;
-    // std::cout << "PROPAGATED: " << propagated << std::endl;
-    // std::cout << "TRAILSIZE: " << trail.size() << std::endl;
-    int lit = trail[propagated];
-    propagated++;
-    propagations++;
-    // std::cout << "LIT: " << lit << std::endl;
-    // std::cout << "0" << std::endl;
-    for (auto c : matrix[-lit]) {
-      if (c == empty_clause)
-        return false;
-      if (satisfied(c))
-        continue;
-      int unassigned = 0;
-      int unass_lit = 0;
-      // bool falsified = false;
-      // int ass_true = 0;
-      for (auto lit_c : *c) {
-        if (lit_c == -lit)
-          continue;
-        if (values[lit_c] < 0) {
-          continue;
-        }
-        /*if (values[lit_c] > 0) {
-          ass_true++;
-          continue;
-        }*/
-        if (values[lit_c] == 0) {
-          unassigned++;
-          // std::cout << "debug ----- unass_lit: " << lit_c << std::endl;
-          unass_lit = lit_c;
-          continue;
-        }
-      }
-      if (unassigned == 0) { //&& ass_true == 0) {
-        conflicts++;
-        // std::cout << "FALSIFIED CLAUSE DETECTED" << std::endl;
-        return false; // falsified clause
-      }
-      if (unassigned == 1) { //&& ass_true == 0) {
-        assign(unass_lit);
-      }
-    }
-  }
-  return true;
-}
-
-#else
 
 // Return 'false' if propagation detects an empty clause otherwise if it
 // completes propagating all literals since the last time it was called
@@ -521,104 +490,64 @@ static bool propagate(void) {
 
 static bool propagate(void) {
   while (propagated != assigned) {
-    // std::cout << "0" << std::endl;
-    // std::cout << "PROPAGATE" << std::endl;
-    // std::cout << "PROPAGATED: " << propagated << std::endl;
-    // std::cout << "TRAILSIZE: " << trail.size() << std::endl;
     int lit = *propagated++;
     propagations++;
-    // std::cout << "LIT: " << lit << std::endl;
-    // std::cout << "0" << std::endl;
-    for (auto c : matrix[-lit]) {
-      //if (satisfied(c))
-      //  continue;
-      int unit = 0;
-      int unassigned = 0;
-      int unass_lit = 0;
-      bool satisfied = false;
-      for (auto lit_c : *c) {
-        signed char value = values[lit_c];
-        if (value < 0) continue;
-        if (value > 0 || unit) goto NEXT_CLAUSE;
-          unit = lit_c;
+    bool conflict = false;
+    for (auto c : matrix_counters[-lit]) {
+      if(values[-lit] == 0) break;
+      c->sum -= -lit;
+      c->count--;
+      if (c->count == 1){
+        if (values[c->sum] == 0) assign(c->sum);
+        if (values[c->sum] == -1) { 
+          conflicts++;
+          conflict = true; // return false;
         }
-      if (!unit) {
-        conflicts++;
-        debug(c, "conflicting");
-        return false;
-      }
-      debug(c, "forced %s by", debug(unit));
-      assign(unit);
-      NEXT_CLAUSE:;
+        if (values[c->sum] == 1) continue;
+        }
+      if (c->count == 0 && c->sum == 0) {
+        conflicts++; 
+        conflict = true; // return false;
       }
     }
-    return true;
+    if (conflict) return false; // was not there before
+  }
+  return true;
 }
 
-#endif
+static void unpropagate(void) {
+  int * control_index = control.back();
+  while (propagated != control_index) {
+    int lit = *--propagated;
+    for (auto c : matrix_counters[-lit]) {
+      c->sum += -lit;
+      c->count++;
+    }
+  }
+}
 
 static int is_power_of_two(size_t n) { return n && !(n & (n - 1)); }
 
-#ifdef HeuristicsTest
-
-static int decision1(void) {
-  // assign a literal in the clause with the most unassigned values.
-  // probably not the best way with these examples with few literals per clause
-  int clause_nbr = 0;
-  int clause_nbr_tmp = -1;
-  int nbr_unass = 0;
-  for (auto c : clauses) {
-    int nbr_unass_tmp = 0;
-    clause_nbr_tmp++;
-    for (auto lit : *c) {
-      if (values[lit] == 0)
-        nbr_unass_tmp++;
-    }
-    if (nbr_unass_tmp > nbr_unass) {
-      nbr_unass = nbr_unass_tmp;
-      clause_nbr = clause_nbr_tmp;
-    }
-  }
-  int lit = 0;
-  int lit_tmp = 0;
-  for (auto lit_c : *clauses[clause_nbr]) {
-    if (values[lit_c] == 0) {
-      lit_tmp = lit_c;
-      break;
-    }
-  }
-  lit = lit_tmp;
-  return lit;
-}
-
-static int decision2(void) {
-  // assign a literal based on the number of occurrences of unassigned
-  // literal in the clauses
-  int res = 0;
-  std::vector<int>::iterator result;
-  int max = *std::max_element(lit_occurrences.begin(), lit_occurrences.end());
-  res = std::distance(lit_occurrences.begin(), std::find(lit_occurrences.begin(), lit_occurrences.end(), max));
-  std::cout << res << std::endl;
-  return res;
-}
-
-#endif
 
 static int decide(void) {
   //if (*assigned == variables)
   //  return 0;
   decisions++;
   int res = 1;
-  // if defined, use the decision heuristic that chooses the clause with the
-  // most unassigned literals
-#ifdef HeuristicsTest
-  // res = decision1();
-  // res = decision2();
-#else
   // simply choose the first unassigned variable
   while (assert(res <= variables), values[res])
     res++;
-#endif
+  /*int highest_unassigned = 0;
+  int lit = 0;
+  for (auto c : matrix_counters[res]) {
+    if (c->count >= highest_unassigned && values[res] == 0) {
+      lit = res;
+      highest_unassigned = c->count;
+    }
+    res++;
+    if (res > variables) break;
+  }
+  res = lit;*/
   level++;
   control.push_back(assigned);
   assign(res);
@@ -643,6 +572,7 @@ static void backtrack() {
   assert(level);
   debug("backtracking to level %d", level - 1);
   int *before = control.back();
+  unpropagate();
   control.pop_back();
   while (assigned != before) unassign(*--assigned);
   propagated = before;
@@ -698,8 +628,10 @@ static void check_model(void) {
     if (satisfied(c))
       continue;
     fputs("babysat: unsatisfied clause:\n", stderr);
-    for (auto lit : *c)
+    for (auto lit : *c) {
       fprintf(stderr, "%d ", lit);
+      //fprintf(stderr, "%d " , values[lit]);
+    }
     fputs("0\n", stderr);
     fflush(stderr);
     abort();

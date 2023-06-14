@@ -15,7 +15,7 @@ run () {
   err=$name.err
   cnf=$name.cnf
   rm -f $log $err
-  cmd="./$solver -c 1000000 $cnf"
+  cmd="./$solver -c 10000000 $cnf"
   printf "%s" "$cmd"
   $cmd 1>$log 2>$err
   status=$?
